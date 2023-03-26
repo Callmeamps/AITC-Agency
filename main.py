@@ -141,7 +141,7 @@ with gr.Blocks() as demo:
     gr.Interface(
         fn=co_founder_chain.run,
         inputs=my_thoughts,
-        output
+        output=
     )
     
 demo.launch()
