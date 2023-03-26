@@ -31,9 +31,9 @@ prompt_response = requests.get(prompt_url, headers=headers)
 res = prompt_response.json()
 prompt_list = res["list"]
 
-chatgpt = ChatOpenAI(temperature=0)
-code_davinci = OpenAI(model_name='code-davinci-002', temperature=0, max_tokens=512)
-code_cushman = OpenAI(model_name='code-cushman-001', temperature=0, max_tokens=512)
+chatgpt = ChatOpenAI(temperature=0.6)
+code_davinci = OpenAI(model_name='code-davinci-002', temperature=0, max_tokens=1024)
+code_cushman = OpenAI(model_name='code-cushman-001', temperature=0, max_tokens=1024)
 command_xl = Cohere()
 flan_t5_xl = HuggingFaceHub(repo_id="google/flan-t5-xl")
 
@@ -69,7 +69,7 @@ co_founder_prompt = PromptTemplate(
     template=co_founder_template
     )
 
-current_budget_total = "R1500"
+current_budget_total = 1500
 current_task = "Attract our initial customers by creating a small yet profitable project."
 
 search = SerpAPIWrapper()
@@ -83,8 +83,8 @@ web_dev_prompt = PromptTemplate(input_variables=["co_founder_request"], template
 
 engineer_prompt = PromptTemplate(input_variables=["co_founder_request"], template=engineer_template)
 
-davinci_chain = LLMChain(prompt=web_dev_prompt, llm=code_davinci)
-cushman_chain = LLMChain(prompt=engineer_prompt, llm=code_cushman)
+davinci_chain = LLMChain(prompt=web_dev_prompt, llm=code_davinci, verbose=True)
+cushman_chain = LLMChain(prompt=engineer_prompt, llm=code_cushman, verbose=True)
 
 web_dev_tools = [
     Tool(
@@ -123,25 +123,42 @@ team = [
     human_tool[0]
 ]
 
+def GetMembers():
+    for member in team:
+        return member.name
+members = GetMembers()
+
 co_founder_agent = initialize_agent(team, chatgpt, agent=web_dev_agent)
 
-co_founder_chain = LLMChain(prompt=co_founder_prompt, llm=chatgpt)
+co_founder_chain = LLMChain(prompt=co_founder_prompt, llm=flan_t5_xl, verbose=True)
 
-with gr.Blocks() as demo:
-    gr.Markdown(f"""
-                ## The Team:
-                
-                {web_dev_template}
-                
-                ### Current Budget = {current_budget_total}
-                ### Current Goal 
-                {current_task}
-                """)
-    my_thoughts = gr.Textbox(lines=5, placeholder="What are your thoughts")
-    gr.Interface(
-        fn=co_founder_chain.run,
-        inputs=my_thoughts,
-        output=
-    )
+def EarlResponse(the_budget, the_team, goal, thoughts):
+    return co_founder_chain.predict(budget_total=the_budget, team=the_team, current_task=goal, co_founder_thoughts=thoughts)
+
+def EarlAgent(the_budget, the_team, goal, thoughts):
+    formatted = co_founder_prompt.format(budget_total=the_budget, team=the_team, current_task=goal, co_founder_thoughts=thoughts)
+    return co_founder_agent.run(formatted)
+
+with gr.Blocks() as earl:
+    gr.Markdown(f"""# Earl.AI Co Founder""")
+    with gr.Box():
+        current_goal = gr.Textbox(value=current_task, label="Current Goal")
+        with gr.Row():
+            with gr.Column():
+                our_team = gr.Dropdown(value=members, label="The Team:")
+            with gr.Column():
+                budget = gr.Number(value=current_budget_total, label="Current Budget")
+    my_thoughts = gr.Textbox(lines=5, placeholder="What are your thoughts", show_label=False)
+    with gr.Row():
+        my_inputs = [budget, our_team, current_goal, my_thoughts]
+        thought_button = gr.Button("Thoughts")
+        project_button = gr.Button("Project")
+
+    with gr.Row():
+        earl_outputs = gr.Textbox(lines=5, placeholder="Let's Go!", show_label=False)
     
-demo.launch()
+        
+    thought_button.click(fn=EarlResponse, inputs=my_inputs, outputs=earl_outputs)
+    project_button.click(fn=EarlAgent, inputs=my_inputs, outputs=earl_outputs)
+
+earl.launch()
