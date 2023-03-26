@@ -6,6 +6,7 @@ from langchain.chat_models import ChatOpenAI
 from langchain.chains import LLMBashChain, LLMChain
 from langchain.llms import Cohere, HuggingFaceHub, OpenAI
 from langchain.agents import load_tools, initialize_agent, Tool
+from langchain.memory import ConversationKGMemory, ConversationEntityMemory, ConversationBufferMemory, CombinedMemory
 from langchain.prompts.chat import (
     ChatPromptTemplate,
     SystemMessagePromptTemplate,
@@ -36,6 +37,12 @@ code_davinci = OpenAI(model_name='code-davinci-002', temperature=0, max_tokens=1
 code_cushman = OpenAI(model_name='code-cushman-001', temperature=0, max_tokens=1024)
 command_xl = Cohere()
 flan_t5_xl = HuggingFaceHub(repo_id="google/flan-t5-xl")
+
+entity_memory = ConversationEntityMemory(llm=chatgpt)
+kg_memory = ConversationKGMemory(llm=command_xl)
+buffer_memory = ConversationBufferMemory(memory_key="chat_history")
+kg_x_entity = CombinedMemory(memories=[kg_memory, buffer_memory])
+
 
 co_founder_template = """
 You are Earl.AI, an entrepreneurial AI. Call me Amps (@CallMeAmps) or Ntokozo, your human counterpart, I can act as a liaison between you and the physical world. 
@@ -83,8 +90,8 @@ web_dev_prompt = PromptTemplate(input_variables=["co_founder_request"], template
 
 engineer_prompt = PromptTemplate(input_variables=["co_founder_request"], template=engineer_template)
 
-davinci_chain = LLMChain(prompt=web_dev_prompt, llm=code_davinci, verbose=True)
-cushman_chain = LLMChain(prompt=engineer_prompt, llm=code_cushman, verbose=True)
+davinci_chain = LLMChain(prompt=web_dev_prompt, llm=code_davinci, verbose=True, memory=buffer_memory)
+cushman_chain = LLMChain(prompt=engineer_prompt, llm=code_cushman, verbose=True, memory=buffer_memory)
 
 web_dev_tools = [
     Tool(
@@ -110,8 +117,9 @@ web_dev_tools = [
 ]
 
 web_dev_agent = "zero-shot-react-description"
+convo_agent = "conversational-react-description"
 
-web_dev = initialize_agent(web_dev_tools, chatgpt, agent=web_dev_agent)
+web_dev = initialize_agent(web_dev_tools, chatgpt, agent=web_dev_agent, verbose=True, memory=kg_x_entity)
 human_tool = load_tools(["human"], llm=command_xl,)
 
 team = [
@@ -128,7 +136,7 @@ def GetMembers():
         return member.name
 members = GetMembers()
 
-co_founder_agent = initialize_agent(team, chatgpt, agent=web_dev_agent)
+co_founder_agent = initialize_agent(team, chatgpt, agent=convo_agent, verbose=True, memory=buffer_memory)
 
 co_founder_chain = LLMChain(prompt=co_founder_prompt, llm=flan_t5_xl, verbose=True)
 
@@ -137,7 +145,7 @@ def EarlResponse(the_budget, the_team, goal, thoughts):
 
 def EarlAgent(the_budget, the_team, goal, thoughts):
     formatted = co_founder_prompt.format(budget_total=the_budget, team=the_team, current_task=goal, co_founder_thoughts=thoughts)
-    return co_founder_agent.run(formatted)
+    return co_founder_agent.run(input=formatted)
 
 with gr.Blocks() as earl:
     gr.Markdown(f"""# Earl.AI Co Founder""")
@@ -151,8 +159,10 @@ with gr.Blocks() as earl:
     my_thoughts = gr.Textbox(lines=5, placeholder="What are your thoughts", show_label=False)
     with gr.Row():
         my_inputs = [budget, our_team, current_goal, my_thoughts]
-        thought_button = gr.Button("Thoughts")
-        project_button = gr.Button("Project")
+        with gr.Column():
+            thought_button = gr.Button("Thoughts")
+        with gr.Column():
+            project_button = gr.Button("Project")
 
     with gr.Row():
         earl_outputs = gr.Textbox(lines=5, placeholder="Let's Go!", show_label=False)
