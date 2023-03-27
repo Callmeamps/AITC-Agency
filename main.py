@@ -19,14 +19,21 @@ from langchain.schema import (
     SystemMessage
 )
 from langchain import SerpAPIWrapper
+from datetime import datetime
+import json
 import config
 
+
 prompt_url = os.environ["prompts_api_url"]
+message_url = os.environ["prompts_api_url"]
+thread_url = os.environ["prompts_api_url"]
 nocodb_api_key = os.environ["NOCODB_API_KEY"]
 headers = {
     "accept": "application/json",
     "xc-token": nocodb_api_key
 }
+
+now = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ')
 
 prompt_response = requests.get(prompt_url, headers=headers)
 res = prompt_response.json()
@@ -93,6 +100,32 @@ engineer_prompt = PromptTemplate(input_variables=["co_founder_request"], templat
 davinci_chain = LLMChain(prompt=web_dev_prompt, llm=code_davinci, verbose=True, memory=buffer_memory)
 cushman_chain = LLMChain(prompt=engineer_prompt, llm=code_cushman, verbose=True, memory=buffer_memory)
 
+title_template = """Generate a short and concise title for the following conversation:
+{convo_history}
+"""
+summary_template = """Generate a short and concise executive summary for the following conversation:
+{convo_history}
+"""
+davinci2 = OpenAI(model="text-davinci-002", temperature=0) 
+
+title_prompt = PromptTemplate(input_variables=["convo_history"], template=title_template)
+
+summary_prompt = PromptTemplate(input_variables=["convo_history"], template=summary_template)
+
+title_chain = LLMChain(
+    llm=davinci2,
+    prompt=title_prompt,
+    verbose=False,
+)
+
+summary_chain = LLMChain(
+    llm=davinci2,
+    prompt=summary_prompt,
+    verbose=False,
+)
+
+
+
 web_dev_tools = [
     Tool(
         name = "Search",
@@ -138,7 +171,7 @@ members = GetMembers()
 
 co_founder_agent = initialize_agent(team, chatgpt, agent=convo_agent, verbose=True, memory=buffer_memory)
 
-co_founder_chain = LLMChain(prompt=co_founder_prompt, llm=flan_t5_xl, verbose=True)
+co_founder_chain = LLMChain(prompt=co_founder_prompt, llm=command_xl, verbose=True)
 
 def EarlResponse(the_budget, the_team, goal, thoughts):
     return co_founder_chain.predict(budget_total=the_budget, team=the_team, current_task=goal, co_founder_thoughts=thoughts)
@@ -147,7 +180,11 @@ def EarlAgent(the_budget, the_team, goal, thoughts):
     formatted = co_founder_prompt.format(budget_total=the_budget, team=the_team, current_task=goal, co_founder_thoughts=thoughts)
     return co_founder_agent.run(input=formatted)
 
-with gr.Blocks() as earl:
+history = []
+Message_Id = 0
+Thread_Id = 0
+
+with gr.Blocks(css="""#btn {color: red} .abc {font-family: "Open Sans", "Sans Serif", cursive !important}""") as earl:
     gr.Markdown(f"""# Earl.AI Co Founder""")
     with gr.Box():
         current_goal = gr.Textbox(value=current_task, label="Current Goal")
@@ -166,9 +203,40 @@ with gr.Blocks() as earl:
 
     with gr.Row():
         earl_outputs = gr.Textbox(lines=5, placeholder="Let's Go!", show_label=False)
-    
-        
-    thought_button.click(fn=EarlResponse, inputs=my_inputs, outputs=earl_outputs)
-    project_button.click(fn=EarlAgent, inputs=my_inputs, outputs=earl_outputs)
 
+    thought = thought_button.click(fn=EarlResponse, inputs=my_inputs, outputs=earl_outputs)
+    project = project_button.click(fn=EarlAgent, inputs=my_inputs, outputs=earl_outputs)
+
+    def prep_message(thread_id, message_id, ai_message, user_prompt, convo_title):
+        history.append({
+                "Id": message_id,
+                "ai_message": ai_message,
+                "CreatedAt": now,
+                "UpdatedAt": now,
+                "user_prompt": user_prompt
+            })
+        message_body = {
+            "Id": message_id,
+            "ai_message": ai_message,
+            "CreatedAt": now,
+            "UpdatedAt": now,
+            "user_prompt": user_prompt,
+            "title": convo_title,
+            "nc_niud___threads_id": thread_id
+        }
+        return message_body
+#    convo_summary = summary_chain.run(convo_history=history)
+
+    def save_message():
+        if thought is not None:
+            convo_title = title_chain.run(convo_history=history)
+            thought_body = prep_message(Thread_Id, Message_Id, thought, my_thoughts, convo_title)
+            requests.post(message_url, json=json.dumps(thought_body), headers=headers)
+        elif project is not None:
+            project_body = prep_message(Thread_Id, Message_Id, project, my_thoughts, convo_title)
+            requests.post(message_url, json=json.dumps(project_body), headers=headers)
+
+    with gr.Row():
+        save_chat_button = gr.Button("Save Message")
+        save_chat_button.click(fn=save_message)
 earl.launch()
