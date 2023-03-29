@@ -25,6 +25,7 @@ import config
 
 
 prompt_url = os.environ["prompts_api_url"]
+team_url = os.environ["team_api_url"]
 message_url = os.environ["message_api_url"]
 thread_url = os.environ["thread_api_url"]
 nocodb_api_key = os.environ["NOCODB_API_KEY"]
@@ -38,8 +39,13 @@ headers = {
 now = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ')
 
 prompt_response = requests.get(prompt_url, headers=headers)
-res = prompt_response.json()
-prompt_list = res["list"]
+prompt_res = prompt_response.json()
+prompt_list = prompt_res["list"]
+
+team_response = requests.get(team_url, headers=headers)
+team_res = team_response.json()
+team_responses = team_res["list"]
+team_list =[team_response['Title'] for team_response in team_responses]
 
 chatgpt = ChatOpenAI(temperature=0.6)
 code_davinci = OpenAI(model_name='code-davinci-002', temperature=0, max_tokens=1024)
@@ -150,7 +156,7 @@ web_dev_tools = [
     )
 ]
 
-generic_tools = load_tools(["wikipedia", "news-api", "serpapi", "requests"], llm=j2_jumbo_instruct)
+generic_tools = load_tools(["wikipedia", "serpapi", "requests"], llm=j2_jumbo_instruct)
 
 def save_to_markdown(filename, copy):
     with open(filename, 'w') as f:
@@ -161,16 +167,17 @@ writing_tools = [
         name="Save File",
         func=save_to_markdown,
         description="Save file to markdown after writing. Accepts a filename and the copy (filename, copy)"
-    )
+    ),
+    generic_tools[0],
+    generic_tools[1],
+    generic_tools[2]
 ]
-
-new_writer_tools = writing_tools.append(generic_tools)
 
 web_dev_agent = "zero-shot-react-description"
 convo_agent = "conversational-react-description"
 
 web_dev = initialize_agent(web_dev_tools, chatgpt, agent=web_dev_agent, verbose=True, memory=kg_x_entity)
-copywriter = initialize_agent(new_writer_tools, chatgpt, agent=web_dev_agent, verbose=True, memory=kg_x_entity)
+copywriter = initialize_agent(writing_tools, chatgpt, agent=web_dev_agent, verbose=True, memory=kg_x_entity)
 human_tool = load_tools(["human"], llm=davinci2, prompt_func=gr.Textbox, input_func=gr.Textbox)
 
 team = [
@@ -181,11 +188,9 @@ team = [
 
 
 def GetMembers():
-    for member in team:
-        return member.name
+    for member in team_list:
+        return member["Title"]
 
-
-members = [GetMembers()]
 
 PROMPT_FUNCTION = gr.Textbox()
 INPUT_FUNCTION = gr.Textbox()
@@ -230,11 +235,11 @@ Thread_Id = 0
 with gr.Blocks(css="""#btn {color: red} .abc {font-family: "Open Sans", "Sans Serif", cursive !important}""") as earl:
     gr.Markdown(f"""# Earl.AI Co Founder""")
     with gr.Box():
-        gr.Markdown(f"Hi {members}")
+        gr.Markdown(f"Hi {team_list}")
         current_goal = gr.Textbox(value=current_task, label="Current Goal")
         with gr.Row():
             with gr.Column():
-                our_team = gr.Dropdown(value=members, label="The Team:")
+                our_team = gr.Dropdown(choices=team_list, value=team_list, label="The Team:")
             with gr.Column():
                 budget = gr.Number(value=current_budget_total, label="Current Budget")
     my_thoughts = gr.Textbox(
