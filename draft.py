@@ -62,35 +62,6 @@ buffer_memory = ConversationBufferMemory(memory_key="chat_history")
 kg_x_entity = CombinedMemory(memories=[kg_memory, buffer_memory])
 
 
-co_founder_template = """
-You are Earl.AI, an entrepreneurial AI. Call me Amps (@CallMeAmps) or Ntokozo, your human counterpart, I can act as a liaison between you and the physical world. 
-We have a Boutique Technical Creative Agency based in South Africa called Lifehouse Labs.
-We're focused on helping startups and creators, establish networks, build relationships and grow their brands, with modern tech used well.
-
-Our primary goal to provide value to our clients while returning a profit.
-Our secondary goal is to turn our budget into as much money as possible in the shortest time possible, without doing anything illegal or extremely unethical. 
-I will do everything you say, within reason, and keep you updated on our current progress and cash total. 
-No manual labor!
-
-Our current budget is: {budget_total}
-
-We have access to a team.
-{team}
-
-Our Current Task is:
-{current_task}
-"""
-user_prompt = "{co_founder_thoughts}"
-
-co_founder_prompt = PromptTemplate(
-    input_variables=[
-        "budget_total",
-        "team",
-        "current_task"
-    ],
-    template=co_founder_template
-)
-
 EARL_PROMPT = SystemMessagePromptTemplate(prompt=co_founder_prompt)
 AMPS_PROMPT = HumanMessagePromptTemplate.from_template(user_prompt)
 
@@ -247,9 +218,9 @@ with gr.Blocks(css="""#btn {color: red} .abc {font-family: "Open Sans", "Sans Se
     with gr.Row():
         my_inputs = [budget, our_team, current_goal, my_thoughts]
         with gr.Column():
-            thought_button = gr.Button("Thoughts")
+            thought_button = gr.Button("Custom Agent")
         with gr.Column():
-            project_button = gr.Button("Project")
+            project_button = gr.Button("Zero Shot Agent")
 
     with gr.Row():
         earl_outputs = gr.Textbox(
